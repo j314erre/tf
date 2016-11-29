@@ -680,7 +680,7 @@ def self_test():
         
         logger.info("Total Parameters: %s" % model.total_parameters)
         
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
     
         # Fake data set for both the (3, 3) and (6, 6) bucket.
         data_set = [

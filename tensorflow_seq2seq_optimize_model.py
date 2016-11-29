@@ -114,7 +114,7 @@ class TFSeq2SeqOptimizeModel(object):
         
         # create multi-layers
         if num_layers > 1:
-            cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
+            cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers, state_is_tuple=False)
 
         # The seq2seq function: we use embedding for the input and attention.
         def seq2seq_classify_f(encoder_inputs_matrix, decoder_inputs, classify_targets, do_decode):
