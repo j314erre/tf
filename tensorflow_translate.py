@@ -14,14 +14,13 @@ import re
 
 # special packages
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
 
 # tensorflow packages
 import tensorflow.python.platform
 import tensorflow as tf
 from tensorflow_seq2seq_model import TFSeq2SeqModel
 from tensorflow.python.platform import gfile
-from tensorflow.models.image.mnist.convolutional import BATCH_SIZE
+BATCH_SIZE=64
 
 # logger
 logger = logging.getLogger("tensorflow_seq2seq")

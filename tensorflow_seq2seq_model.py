@@ -8,7 +8,6 @@ from __future__ import print_function
 import random
 
 import numpy as np
-from six.moves import xrange    # pylint: disable=redefined-builtin
 import tensorflow as tf
 
 
@@ -82,28 +81,31 @@ class TFSeq2SeqModel(object):
                 b = tf.get_variable("proj_b", [self.target_vocab_size])
             output_projection = (w, b)
 
-            def sampled_loss(inputs, labels):
+            def sampled_loss(labels, inputs):
                 with tf.device("/cpu:0"):
                     labels = tf.reshape(labels, [-1, 1])
-                    return tf.nn.sampled_softmax_loss(w_t, b, inputs, labels, num_samples,
+                    local_w_t = tf.cast(w_t, tf.float32)
+                    local_b = tf.cast(b, tf.float32)
+                    local_inputs = tf.cast(inputs, tf.float32)
+                    return tf.nn.sampled_softmax_loss(local_w_t, local_b, labels, local_inputs, num_samples,
                                                                                         self.target_vocab_size)
             softmax_loss_function = sampled_loss
 
         # Create the internal multi-layer cell for our RNN.
         
         # default is GRU
-        single_cell = tf.nn.rnn_cell.GRUCell(size)
+        single_cell = tf.contrib.rnn.GRUCell(size)
         
         # otherwise use LS
         if use_lstm:
-            single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
+            single_cell = tf.contrib.rnn.BasicLSTMCell(size)
             
         # start with single cell    
         cell = single_cell
         
         # create multi-layers
         if num_layers > 1:
-            cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
+            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
 
         # The seq2seq function: we use embedding for the input and attention.
         def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
@@ -133,7 +135,7 @@ class TFSeq2SeqModel(object):
             #       with length len(decoder_inputs) -- one item for each time-step.
             #       Each item is a 2D Tensor of shape [batch_size x cell.state_size].
             
-            return tf.nn.seq2seq.embedding_attention_seq2seq(
+            return tf.contrib.legacy_seq2seq.embedding_attention_seq2seq(
                                                              encoder_inputs=encoder_inputs, 
                                                              decoder_inputs=decoder_inputs, 
                                                              cell=cell, 
@@ -164,7 +166,7 @@ class TFSeq2SeqModel(object):
 
         # Training outputs and losses.
         if forward_only:
-            self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+            self.outputs, self.losses = tf.contrib.legacy_seq2seq.model_with_buckets(
                     self.encoder_inputs, self.decoder_inputs, targets,
                     self.target_weights, buckets,
                     lambda x, y: seq2seq_f(x, y, True),
@@ -174,7 +176,7 @@ class TFSeq2SeqModel(object):
                 for b in xrange(len(buckets)):
                     self.outputs[b] = [tf.nn.xw_plus_b(output, output_projection[0], output_projection[1]) for output in self.outputs[b]]
         else:
-            self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+            self.outputs, self.losses = tf.contrib.legacy_seq2seq.model_with_buckets(
                     self.encoder_inputs, self.decoder_inputs, targets,
                     self.target_weights, buckets,
                     lambda x, y: seq2seq_f(x, y, False),
@@ -204,10 +206,10 @@ class TFSeq2SeqModel(object):
 
         # Summary
         for bucket_id, loss in enumerate(self.losses):
-            tf.scalar_summary("loss_%d" % bucket_id, loss)
+            tf.summary.scalar("loss_%d" % bucket_id, loss)
             
         if self.summary:
-            self.summaries = tf.merge_all_summaries()
+            self.summaries = tf.summary.merge_all()
             
         # Saver
         self.saver = tf.train.Saver(tf.all_variables())

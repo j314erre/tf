@@ -8,10 +8,7 @@ from __future__ import print_function
 import random
 
 import numpy as np
-from six.moves import xrange    # pylint: disable=redefined-builtin
 import tensorflow as tf
-from tensorflow.python.ops import rnn
-from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import array_ops
@@ -79,7 +76,7 @@ class TFRNNClassifyModel(object):
             #  Tensor("embedding/ExpandDims:0", shape=(?, sequence_length, embedding_size, 1), dtype=float32, device=/device:CPU:0)
             #self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)
 
-        encoder_inputs = tf.unpack(self.embedded_chars, axis=1)
+        encoder_inputs = tf.unstack(self.embedded_chars, axis=1)
             
         # Create the internal multi-layer cell for our RNN.
         
@@ -120,18 +117,18 @@ class TFRNNClassifyModel(object):
 #             self.h_drop = tf.nn.dropout(self.h_pool_flat, self.dropout_keep_prob)
 
         # default is GRU
-        single_cell = tf.nn.rnn_cell.GRUCell(embedding_size)
+        single_cell = tf.contrib.rnn.GRUCell(embedding_size)
         
         # otherwise use LS
         if use_lstm:
-            single_cell = tf.nn.rnn_cell.BasicLSTMCell(embedding_size)
+            single_cell = tf.contrib.rnn.BasicLSTMCell(embedding_size)
             
         # start with single cell    
         encoder_cell = single_cell
         
         # create multi-layers
         if num_layers > 1:
-            encoder_cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
+            encoder_cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
 
         #encoder_cell = tf.nn.rnn_cell.GRUCell(embedding_size)
         current_batch_size = array_ops.shape(encoder_inputs[0])[0]

@@ -8,7 +8,6 @@ from __future__ import print_function
 import random
 
 import numpy as np
-from six.moves import xrange    # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
@@ -18,8 +17,8 @@ from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import rnn
-from tensorflow.python.ops import rnn_cell
 from tensorflow.python.ops import variable_scope
+from tensorflow.contrib.rnn.python.ops.core_rnn_cell_impl import _linear
 
 
 import logging
@@ -87,33 +86,38 @@ class TFNSeq2SeqModel(object):
         # Sampled softmax only makes sense if we sample less than vocabulary size.
         if num_samples > 0 and num_samples < self.target_vocab_size:
             with tf.device("/cpu:0"):
-                w = tf.get_variable("proj_w", [size, self.target_vocab_size])
-                w_t = tf.transpose(w)
+                #w = tf.get_variable("proj_w", [size, self.target_vocab_size])
+                #w_t = tf.transpose(w)
+                w_t = tf.get_variable("proj_w", [self.target_vocab_size, size])
+                w = tf.transpose(w_t)
                 b = tf.get_variable("proj_b", [self.target_vocab_size])
             output_projection = (w, b)
 
-            def sampled_loss(inputs, labels):
+            def sampled_loss(labels, inputs):
                 with tf.device("/cpu:0"):
                     labels = tf.reshape(labels, [-1, 1])
-                    return tf.nn.sampled_softmax_loss(w_t, b, inputs, labels, num_samples,
+                    local_w_t = tf.cast(w_t, tf.float32)
+                    local_b = tf.cast(b, tf.float32)
+                    local_inputs = tf.cast(inputs, tf.float32)
+                    return tf.nn.sampled_softmax_loss(local_w_t, local_b, labels, local_inputs, num_samples,
                                                                                         self.target_vocab_size)
             softmax_loss_function = sampled_loss
 
         # Create the internal multi-layer cell for our RNN.
         
         # default is GRU
-        single_cell = tf.nn.rnn_cell.GRUCell(size)
+        single_cell = tf.contrib.rnn.GRUCell(size)
         
         # otherwise use LS
         if use_lstm:
-            single_cell = tf.nn.rnn_cell.BasicLSTMCell(size)
+            single_cell = tf.contrib.rnn.BasicLSTMCell(size)
             
         # start with single cell    
         cell = single_cell
         
         # create multi-layers
         if num_layers > 1:
-            cell = tf.nn.rnn_cell.MultiRNNCell([single_cell] * num_layers)
+            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
 
         # The seq2seq function: we use embedding for the input and attention.
         def Nseq2seq_f(encoder_inputs_matrix, decoder_inputs, do_decode):
@@ -353,7 +357,7 @@ class TFNSeq2SeqModel(object):
             # ENCODER
             
             # add embedding to the RNN cell
-            encoder_cell = rnn_cell.EmbeddingWrapper(
+            encoder_cell = tf.contrib.rnn.EmbeddingWrapper(
                                                      cell=cell, 
                                                      embedding_classes=num_encoder_symbols,
                                                      embedding_size=embedding_size
@@ -437,7 +441,7 @@ class TFNSeq2SeqModel(object):
                           for e in encoder_context_outputs]
             
             # attention_states: 3D TensorShape(?=batch_size, N + input_sequence_length, embedding_size)
-            attention_states = array_ops.concat(1, top_states)
+            attention_states = array_ops.concat(top_states, 1)
         
             # concat encoder + context state 
             #decoder_initial_state = tf.concat(1, [encoder_state, context_state])
@@ -451,7 +455,7 @@ class TFNSeq2SeqModel(object):
             # ...but this is rarely the case...
             output_size = None
             if output_projection is None:
-                cell = rnn_cell.OutputProjectionWrapper(cell, num_decoder_symbols)
+                cell = tf.contrib.rnn.OutputProjectionWrapper(cell, num_decoder_symbols)
                 output_size = num_decoder_symbols
         
             # this is usually the case...
@@ -602,7 +606,7 @@ class TFNSeq2SeqModel(object):
                         # compute W2 * [decoder hidden states]
                         # linear map:   sum_i(query[i] * W2[i]), where W2[i]s are newly created matrices. 
                         # y: 2D TensorShape: (?=batch_size, attention_vec_size)
-                        y = rnn_cell._linear(query, attention_vec_size, bias=True)
+                        y = _linear(query, attention_vec_size, bias=True)
                         
                         # A 4D TensoShape: (?=batch_size, 1, 1, attention_vec_size)
                         y = array_ops.reshape(y, [-1, 1, 1, attention_vec_size])
@@ -630,7 +634,7 @@ class TFNSeq2SeqModel(object):
             outputs = []
             state = initial_state
             prev = None
-            batch_attn_size = array_ops.pack([batch_size, attn_size])
+            batch_attn_size = array_ops.stack([batch_size, attn_size])
             
             # initialize attention vector to zeros: 2D TensorShape: (?=batch_size, attention_vec_size)
             attns = [array_ops.zeros(batch_attn_size, dtype=dtype)
@@ -655,7 +659,7 @@ class TFNSeq2SeqModel(object):
                 if cell_input_size.value is None:
                     raise ValueError("Could not infer input size from input: %s" % inp.name)
                 # Merge input and previous attentions into one vector of the right size.
-                x = rnn_cell._linear([inp] + attns, cell_input_size, True)
+                x = _linear([inp] + attns, cell_input_size, True)
                 # Run the RNN.
                 cell_output, state = cell(x, state)
                 # Run the attention mechanism.
@@ -667,7 +671,7 @@ class TFNSeq2SeqModel(object):
                     attns = attention(state)
 
                 with variable_scope.variable_scope("AttnOutputProjection"):
-                    output = rnn_cell._linear([cell_output] + attns, output_size, True)
+                    output = _linear([cell_output] + attns, output_size, True)
                 if loop_function is not None:
                     prev = output
                 outputs.append(output)
@@ -740,7 +744,7 @@ class TFNSeq2SeqModel(object):
                                                       [num_symbols, embedding_size])
                 
             # Get a loop_function that extracts the previous symbol and embeds it    
-            loop_function = tf.nn.seq2seq._extract_argmax_and_embed(
+            loop_function = tf.contrib.legacy_seq2seq._extract_argmax_and_embed(
                 decoder_embedding, output_projection,
                 update_embedding_for_previous) if feed_previous else None
                 
@@ -825,11 +829,11 @@ class TFNSeq2SeqModel(object):
                                                 decoder_inputs[:bucket[1]])
                     outputs.append(bucket_outputs)
                     if per_example_loss:
-                        losses.append(tf.nn.seq2seq.sequence_loss_by_example(
+                        losses.append(tf.contrib.legacy_seq2seq.sequence_loss_by_example(
                               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
                               softmax_loss_function=softmax_loss_function))
                     else:
-                        losses.append(tf.nn.seq2seq.sequence_loss(
+                        losses.append(tf.contrib.legacy_seq2seq.sequence_loss(
                               outputs[-1], targets[:bucket[1]], weights[:bucket[1]],
                               softmax_loss_function=softmax_loss_function))
         
