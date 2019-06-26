@@ -7,6 +7,10 @@ tensorflow NLP experiments
 
 `python tensorflow_chat2b.py --input /deeplearning/data/opensubtitles2016/opensubtitles2016_context10.txt --model_dir /deeplearning/models/chat2b_window5o/ --size=512 --num_layers=1 --steps_per_checkpoint=10000 --dev_train_split=0.2 --max_context_window=5`
 
+### testing
+
+`python/tensorflow_chat2b.py **--decode** --input /deeplearning/data/opensubtitles2016/opensubtitles2016_context10.dev.txt --model_dir /home/jpierre/deeplearning/models/chat2b_window5o/ --size=512 --num_layers=1 --steps_per_checkpoint=10000 --dev_train_split=0.2 --max_context_window=5`
+
 ## translation / chatbot
 
 ### training
